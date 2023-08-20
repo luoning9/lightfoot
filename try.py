@@ -1,48 +1,47 @@
-from llama_index import SimpleDirectoryReader, StorageContext, load_index_from_storage, GPTVectorStoreIndex
-from llama_index.storage.docstore import MongoDocumentStore, SimpleDocumentStore
-from llama_index.storage.index_store import MongoIndexStore, SimpleIndexStore
-from llama_index.vector_stores import ChromaVectorStore, SimpleVectorStore
 import os
-import chromadb
-import logging
-import sys
-from chromadb.config import Settings
-logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
-# logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
+import gradio as gr
+import openai
 
-os.environ['all_proxy'] = 'socks5h://127.0.0.1:1086'
-assert os.getenv("OPENAI_API_KEY"), "please set openai key."
+import myutils
 
-PERSIST_DIR = "./storage"
-INDEX_ID = "paul"
+global_conf = myutils.initialize_config()
 
-# init Chroma collection
-chroma_client = chromadb.PersistentClient(path="./storage/chromadb/")
-chroma_collection = chroma_client.create_collection(name="docs_first",
-                                                    get_or_create=True)
-vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
+assert os.getenv("OPENAI_API_KEY") is not None, "please set openai key!"
+assert os.getenv("all_proxy") is not None, "please set proxy!"
 
-storage_context = StorageContext.from_defaults(
-    docstore=SimpleDocumentStore.from_persist_dir(persist_dir=PERSIST_DIR),
-    index_store=SimpleIndexStore.from_persist_dir(persist_dir=PERSIST_DIR),
-#    vector_store = SimpleVectorStore.from_persist_dir(persist_dir=PERSIST_DIR)
-    vector_store = vector_store
-)
-index = load_index_from_storage(storage_context, index_id=INDEX_ID)
-documents = SimpleDirectoryReader('examples/paul_graham_essay/data',
-                                  filename_as_id=True).load_data()
-for doc in documents:
-    logging.debug("loaded doc %s", doc.text[:40]+"..." if len(doc.text)>43 else doc.text )
-updated = index.refresh_ref_docs(documents)
-print(f"update status {updated}")
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
-# create new storages
-# index = GPTVectorStoreIndex.from_documents(documents=documents,
-#                                           storage_context=storage_context)
-# index.set_index_id(INDEX_ID)
-storage_context.persist()
+LLM_MODEL = global_conf.get('query','model')
+if LLM_MODEL is None:
+    LLM_MODEL = 'gpt-3.5-turbo'
+# ======= end of init ===============
+chat_history = [
+    {"role": "system", "content": "You are a helpful and kind AI Assistant."},
+]
 
 
-# query_engine = index.as_query_engine()
-# response = query_engine.query("What did the author do when he was young?")
-# print(response)
+def get_model_reply(query, context):
+    chat_history.append({"role": "user", "content": query})
+    # given the most recent context (4096 characters)
+    # continue the text up to 2048 tokens ~ 8192 characters
+    response = openai.ChatCompletion.create(
+        model=LLM_MODEL,  # one of the most capable models available
+        messages=chat_history,
+    )
+    # append response to context
+    reply = response.choices[0].message.content
+    chat_history.append({"role": "assistant", "content": reply})
+    # list of (user, bot) responses. We will use this format later
+    messages = [(u['content'], b['content']) for u, b in zip(chat_history[1::2], chat_history[2::2])]
+    # print(f"OUT: {messages}")
+    return "", messages
+
+
+with gr.Blocks() as app:
+    chatbot = gr.Chatbot()
+    msg = gr.Textbox()
+    clear = gr.ClearButton([msg, chatbot])
+    msg.submit(get_model_reply, [msg, chatbot], [msg, chatbot])
+
+if __name__ == "__main__":
+    app.launch()
