@@ -13,11 +13,11 @@ os.environ['all_proxy'] = 'socks5h://127.0.0.1:1086'
 assert os.getenv("OPENAI_API_KEY"), "please set openai key."
 assert os.getenv("OPENAI_API_KEY"), "please set proxy"
 
-PERSIST_DIR = "./storage"
+PERSIST_DIR = "../storage"
 INDEX_ID = "paul"
 
 # init Chroma collection
-chroma_client = chromadb.PersistentClient(path="./storage/chromadb/")
+chroma_client = chromadb.PersistentClient(path="../storage/chromadb/")
 chroma_collection = chroma_client.create_collection(name="docs_first",
                                                     get_or_create=True)
 vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
@@ -25,7 +25,7 @@ vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
 storage_context = StorageContext.from_defaults(
     vector_store = vector_store
 )
-documents = SimpleDirectoryReader('examples/paul_graham_essay/data',
+documents = SimpleDirectoryReader('../examples/paul_graham_essay/data',
                                   filename_as_id=True).load_data()
 # create new storages
 index = GPTVectorStoreIndex.from_documents(documents=documents,
